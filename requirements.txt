@@ -1,0 +1,5 @@
+streamlit>=1.45
+websocket-client>=1.8
+plotly>=6.0
+pandas>=2.2
+numpy>=2.0
