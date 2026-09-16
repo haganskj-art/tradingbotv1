@@ -1,60 +1,69 @@
-# GRAVAI V6 — Topstep Assistant
+# GRAVAI V8 — Topstep Assistant (Auto Signals + Simulated Execution)
 
-GravAI V6 is the no-API, no-auto-execution version for monitoring NQ/MNQ alongside TopstepX.
+GravAI V8 builds on V7 with **local simulated execution**. It automatically opens a simulated bracket trade when a qualifying LONG/SHORT signal appears, then manages the simulated stop-loss and take-profit without sending any broker or TopstepX orders.
 
-## V6 features
+## V8 features
 
-- NQ — E-mini Nasdaq-100
-- MNQ — Micro E-mini Nasdaq-100
-- Automatic polling market monitor
-- Large visual LONG/SHORT setup alerts
-- Optional browser sound/notification attempt after the user arms sound
-- Alert history
-- Fair-value / rolling-mean dislocation analysis
-- Entry, stop, target and R:R planner
-- Dollar risk calculation based on contract size
-- Personal daily-loss planning check
-- Manual input mode remains available
-- No Topstep API credentials
-- No order automation
-- No browser clicking or scraping of TopstepX
+- NQ and MNQ
+- Authorized CME WebSocket feed option from V7
+- Yahoo delayed fallback clearly labeled
+- Precision, multi-factor LONG/SHORT confluence engine
+- Automatic monitoring
+- Visual and optional audible alerts
+- Automatic **simulation-only** entries
+- Automatic simulated stop-loss and take-profit
+- ATR-based stop sizing and configurable R:R target
+- Maximum simulated trades/day
+- Simulated daily-loss lock
+- Simulated slippage option
+- Unrealized and realized P&L
+- Simulated position dashboard and trade history
+- Emergency simulated flatten
+- Reset simulation button
+- No ProjectX API
+- No TopstepX credentials
+- No broker order submission
+- No browser automation or screen scraping
 
-## Market-data limitation
-
-The built-in automatic feed uses Yahoo Finance's public chart endpoint for NQ=F and MNQ=F. Yahoo currently labels CME futures quotes as **Delayed Quote**, so the automatic monitor is useful as a prototype/secondary alerting tool but should **not** be treated as a real-time execution-grade feed. Replace `src/market_data.py` with an authorized real-time futures feed before relying on alerts for live trading.
-
-Topstep states that Level 1 top-of-book market data is covered at no additional cost for Trading Combine and Express Funded Account users, while Level 2 is a paid upgrade. That platform data remains separate from this V6 app because no Topstep/ProjectX API is being used here.
-
-## Alert behavior
-
-V6 alerts only when the signal transitions into `LONG SETUP` or `SHORT SETUP`, not on every refresh. A return to `WAIT` arms the next setup alert.
-
-The default setup rule is deterministic:
-
-- `LONG SETUP`: z-score <= -1.5 and price <= fair value
-- `SHORT SETUP`: z-score >= +1.5 and price >= fair value
-- Otherwise: `WAIT`
-
-These are strategy parameters, not guarantees of profitability.
-
-## Run
+## Simulation pipeline
 
 ```text
-streamlit run app.py
+CME real-time feed (when configured)
+            ↓
+     Precision signal engine
+            ↓
+        LONG / SHORT
+            ↓
+     Simulation risk checks
+            ↓
+    Local simulated market entry
+            ↓
+       ┌──────────────┐
+       │ Stop Loss    │
+       │ Take Profit  │
+       └──────────────┘
+            ↓
+      Simulated P&L log
 ```
 
-## Topstep workflow
+### Automatic bracket settings
 
-1. Open TopstepX on the same computer.
-2. Open GravAI V6 beside it.
-3. Enable automatic monitoring.
-4. When a setup alert appears, review the plan.
-5. Place the order manually in TopstepX.
-6. Use TopstepX's own order/risk controls for execution and position management.
+When Auto-simulate is enabled:
 
-## Contract values
+- Entry = current modeled market price
+- Stop distance = `ATR × Auto stop = ATR ×`
+- Target distance = `stop distance × Auto target R:R`
+- NQ dollar value = $20 per index point per contract
+- MNQ dollar value = $2 per index point per contract
 
-- NQ: $20 per index point per contract.
-- MNQ: $2 per index point per contract.
+When a single OHLC bar shows both the stop and target being touched, the simulator uses **stop-first** by default because OHLC data alone cannot prove which level traded first. This is a conservative simulation assumption.
 
-Always verify your active contract and current Topstep rules before trading.
+## Safety
+
+V8 is **simulation-only**. It does not log into TopstepX, click buttons, submit orders, modify orders, cancel orders, or access a Topstep account. Do not treat the signal score as a probability or a profit guarantee.
+
+For live-use research, validate the strategy with recorded market data / paper results first and verify current Topstep rules and risk limits before trading.
+
+## CME connection
+
+V7's CME WebSocket connector is retained. Configure the exact environment-specific URL, authentication headers, and subscription message supplied by CME through Streamlit Secrets. Never put private credentials or tokens in GitHub.
