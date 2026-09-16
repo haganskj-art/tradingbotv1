@@ -1,61 +1,60 @@
-# GRAVAI V7 — Topstep Assistant (Real-Time Market Data)
+# GRAVAI V6 — Topstep Assistant
 
-GravAI V7 keeps the final TopstepX order click under your control while adding an **authorized real-time CME futures data connector** for NQ/MNQ. It does not place Topstep orders and does not scrape or click TopstepX.
+GravAI V6 is the no-API, no-auto-execution version for monitoring NQ/MNQ alongside TopstepX.
 
-## What changed from V6
+## V6 features
 
-- CME Group real-time WebSocket feed option for NQ/MNQ
-- Yahoo delayed feed retained only as an explicit fallback
-- Live connection/status indicator
-- Live quote age and message counter
-- Existing precision LONG/SHORT confluence engine retained
-- Existing visual/audio alerts retained
-- No ProjectX API required for order execution because V7 never sends orders
+- NQ — E-mini Nasdaq-100
+- MNQ — Micro E-mini Nasdaq-100
+- Automatic polling market monitor
+- Large visual LONG/SHORT setup alerts
+- Optional browser sound/notification attempt after the user arms sound
+- Alert history
+- Fair-value / rolling-mean dislocation analysis
+- Entry, stop, target and R:R planner
+- Dollar risk calculation based on contract size
+- Personal daily-loss planning check
+- Manual input mode remains available
+- No Topstep API credentials
+- No order automation
+- No browser clicking or scraping of TopstepX
 
-## Important: real-time CME access is separate from TopstepX execution
+## Market-data limitation
 
-CME offers a cloud-hosted real-time Futures & Options WebSocket API that can provide top-of-book and trade data. Access requires the appropriate CME data subscription/licensing. CME's portal provides the environment-specific WebSocket URL, authentication, and sample subscription message. V7 intentionally reads those values from Streamlit Secrets instead of guessing at CME-specific protocol details.
+The built-in automatic feed uses Yahoo Finance's public chart endpoint for NQ=F and MNQ=F. Yahoo currently labels CME futures quotes as **Delayed Quote**, so the automatic monitor is useful as a prototype/secondary alerting tool but should **not** be treated as a real-time execution-grade feed. Replace `src/market_data.py` with an authorized real-time futures feed before relying on alerts for live trading.
 
-## Streamlit Secrets
+Topstep states that Level 1 top-of-book market data is covered at no additional cost for Trading Combine and Express Funded Account users, while Level 2 is a paid upgrade. That platform data remains separate from this V6 app because no Topstep/ProjectX API is being used here.
 
-Use the exact values supplied by CME for:
+## Alert behavior
 
-- `CME_WS_URL`
-- `CME_WS_HEADERS_JSON` (JSON object; only when required)
-- `CME_SUBSCRIBE_JSON` (exact JSON subscription request)
-- `CME_SYMBOL`
+V6 alerts only when the signal transitions into `LONG SETUP` or `SHORT SETUP`, not on every refresh. A return to `WAIT` arms the next setup alert.
 
-Never commit real credentials, tokens, or private subscription values to GitHub.
+The default setup rule is deterministic:
 
-## Data pipeline
+- `LONG SETUP`: z-score <= -1.5 and price <= fair value
+- `SHORT SETUP`: z-score >= +1.5 and price >= fair value
+- Otherwise: `WAIT`
+
+These are strategy parameters, not guarantees of profitability.
+
+## Run
 
 ```text
-CME WebSocket (real-time)
-        ↓
-NQ / MNQ quote + trade messages
-        ↓
-Local 1-minute OHLCV buffer
-        ↓
-GravAI precision signal engine
-        ↓
-LONG / SHORT / WAIT
-        ↓
-Visual + optional sound alert
-        ↓
-YOU place the order in TopstepX
+streamlit run app.py
 ```
-
-The V7 adapter also keeps the last quote, connection status, and a rolling bar buffer in memory. If CME Live is not configured, the dashboard clearly falls back to Yahoo delayed data.
 
 ## Topstep workflow
 
 1. Open TopstepX on the same computer.
-2. Run GravAI V7.
-3. Select `CME Live` once your CME subscription is configured.
-4. Enable automatic monitoring.
-5. Confirm the dashboard says `REAL-TIME` and the quote age is current.
-6. Wait for a LONG/SHORT alert.
-7. Review entry, stop, target, R:R and risk.
-8. Place the trade manually in TopstepX.
+2. Open GravAI V6 beside it.
+3. Enable automatic monitoring.
+4. When a setup alert appears, review the plan.
+5. Place the order manually in TopstepX.
+6. Use TopstepX's own order/risk controls for execution and position management.
 
-Do not treat an alert as a guarantee of profit or execution quality. Validate the signal engine in simulation first.
+## Contract values
+
+- NQ: $20 per index point per contract.
+- MNQ: $2 per index point per contract.
+
+Always verify your active contract and current Topstep rules before trading.

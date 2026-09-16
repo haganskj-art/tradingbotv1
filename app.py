@@ -10,7 +10,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 
-from src.market_data import LiveMarketData
+from src.market_data import YahooDelayedFeed
 from src.topstep_assistant import TopstepAssistant
 
 st.set_page_config(page_title="GravAI V6 — Topstep Assistant", page_icon="⚡", layout="wide")
@@ -32,8 +32,7 @@ if market not in st.session_state.assistants:
 assistant = st.session_state.assistants[market]
 
 if "feed" not in st.session_state:
-    st.session_state.feed = LiveMarketData(st.secrets)
-    st.session_state.feed.start()
+    st.session_state.feed = YahooDelayedFeed()
 if "last_alert_signal" not in st.session_state:
     st.session_state.last_alert_signal = {"NQ": "", "MNQ": ""}
 if "alert_count" not in st.session_state:
@@ -46,19 +45,11 @@ if "last_fetch_error" not in st.session_state:
 st.sidebar.markdown(f"**{label}**")
 st.sidebar.caption(f"$ {multiplier:.0f} per index point per contract")
 
-st.sidebar.subheader("DATA SOURCE")
-provider = st.sidebar.selectbox("Market data", ["CME Live", "Yahoo Delayed"], index=0 if st.session_state.feed.cme_configured else 1)
-if provider == "CME Live":
-    if st.session_state.feed.cme_configured:
-        st.sidebar.success("CME WebSocket configured")
-    else:
-        st.sidebar.warning("CME WebSocket not configured — using Yahoo fallback")
-
 st.sidebar.subheader("AUTO MONITOR")
 auto = st.sidebar.toggle("Enable automatic monitoring", value=False)
 interval = st.sidebar.slider("Refresh interval (seconds)", min_value=5, max_value=60, value=10, step=5)
 sound_enabled = st.sidebar.checkbox("Arm browser sound", value=False)
-st.sidebar.caption("CME Live uses an authorized CME WebSocket subscription. Yahoo is retained only as a delayed fallback.")
+st.sidebar.caption("Automatic feed: Yahoo Finance CME futures quote, which Yahoo labels delayed.")
 
 if auto:
     st_autorefresh(interval=interval * 1000, key="grav_ai_v6_refresh")
@@ -77,8 +68,8 @@ if manual_mode:
 else:
     if auto:
         try:
-            quote = st.session_state.feed.fetch(market, provider=provider)
-            st.session_state.last_state = assistant.analyze_candles(quote.candles, quote.price, quote.bid, quote.ask, None)
+            quote = st.session_state.feed.fetch(market)
+            st.session_state.last_state = assistant.update(quote.price, quote.bid, quote.ask, None)
             st.session_state.last_quote = quote
             st.session_state.last_fetch_error = ""
         except Exception as exc:
@@ -86,8 +77,8 @@ else:
     elif "last_quote" not in st.session_state:
         # Fetch once so the dashboard is not blank even before the user enables auto mode.
         try:
-            quote = st.session_state.feed.fetch(market, provider=provider)
-            st.session_state.last_state = assistant.analyze_candles(quote.candles, quote.price, quote.bid, quote.ask, None)
+            quote = st.session_state.feed.fetch(market)
+            st.session_state.last_state = assistant.update(quote.price, quote.bid, quote.ask, None)
             st.session_state.last_quote = quote
             st.session_state.last_fetch_error = ""
         except Exception as exc:
@@ -156,9 +147,7 @@ c1, c2, c3 = st.columns([1, 2, 1])
 with c1:
     st.markdown('<div class="signal"><div class="small">GRAVAI SETUP</div>', unsafe_allow_html=True)
     cls = "green" if "LONG" in sig else ("red" if "SHORT" in sig else "")
-    diag = state.get("diagnostics", {}) or {}
-    quality = state.get("score", 0.0)
-    st.markdown(f'<div class="metric {cls}">{html.escape(sig)}</div><div class="mono">QUALITY {quality:.0f}% • Z-SCORE {state.get("zscore",0):+.2f}</div><div class="muted">Strength: {state.get("strength","NONE")} • Multi-factor confirmation required</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric {cls}">{html.escape(sig)}</div><div class="mono">Z-SCORE {state.get("zscore",0):+.2f}</div><div class="muted">Strength: {state.get("strength","NONE")}</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 with c2:
     st.markdown('<div class="card"><div class="small">PRICE / FAIR VALUE</div>', unsafe_allow_html=True)
@@ -181,44 +170,13 @@ with c3:
     if quote is not None:
         age = quote.age_seconds
         age_text = f"{age:.0f}s ago" if age is not None else "unknown age"
-        st.write(f"**Feed:** {quote.source} ({"DELAYED" if quote.delayed else "REAL-TIME"})")
-        if not quote.delayed:
-            st.write(f"**Connection:** {"CONNECTED" if quote.connected else "WAITING"}")
-            st.write(f"**Messages:** {quote.message_count}")
+        st.write(f"**Feed:** {quote.source} (delayed)")
         st.write(f"**Quote time:** {age_text}")
     else:
         st.write("**Feed:** Manual")
     if st.session_state.last_fetch_error:
         st.error("Automatic data fetch failed. Check the connection or use manual mode.")
-    if quote is not None and quote.last_error:
-        st.warning(quote.last_error)
     st.markdown('</div>', unsafe_allow_html=True)
-
-with st.expander("Signal diagnostics — why GravAI is waiting or alerting", expanded=False):
-    diag = state.get("diagnostics", {}) or {}
-    if diag:
-        a,b,c,d = st.columns(4)
-        a.metric("LONG SCORE", f"{diag.get("long_score", 0):.0f}%")
-        b.metric("SHORT SCORE", f"{diag.get("short_score", 0):.0f}%")
-        c.metric("RSI", f"{diag.get("rsi", 0):.1f}")
-        d.metric("VOL RATIO", f"{diag.get("volume_ratio", 0):.2f}x")
-        st.write({
-            "EMA9": diag.get("ema9"), "EMA21": diag.get("ema21"), "EMA50": diag.get("ema50"),
-            "VWAP": diag.get("vwap"), "ATR": diag.get("atr"), "Z-score": diag.get("zscore")
-        })
-        if diag.get("long_checks") or diag.get("short_checks"):
-            left, right = st.columns(2)
-            with left:
-                st.markdown("**LONG confluence**")
-                for k,v in diag.get("long_checks", {}).items():
-                    st.write(("✅ " if v else "⬜ ") + k.replace("_", " ").title())
-            with right:
-                st.markdown("**SHORT confluence**")
-                for k,v in diag.get("short_checks", {}).items():
-                    st.write(("✅ " if v else "⬜ ") + k.replace("_", " ").title())
-        st.caption("The quality score is a rule-based confluence score, not a probability of profit. V6 requires multi-timeframe alignment, momentum, pullback/reclaim, candle quality and volume; alerts are intentionally less frequent.")
-    else:
-        st.info("Waiting for enough market bars to calculate the precision model.")
 
 st.subheader("Trade Plan")
 col1, col2 = st.columns([1, 2])
@@ -257,11 +215,10 @@ st.subheader("How V6 works")
 st.markdown("""
 1. Turn on **Enable automatic monitoring**.
 2. GravAI polls the configured market feed on the selected interval.
-3. The precision model checks trend alignment, 5-minute and 15-minute confirmation, VWAP, RSI/momentum, pullback/reclaim behavior, candle quality, volume, and overextension.
-4. A setup must also confirm on the prior completed bar and pass a cooldown.
-5. When the signal changes into **LONG SETUP** or **SHORT SETUP**, V6 shows a large visual alert and, after browser sound is armed, attempts an audible beep/notification.
-6. Review the entry/stop/target and risk panel.
-7. **You place the order manually in TopstepX.**
+3. A deterministic dislocation rule evaluates the recent price series.
+4. When the signal changes into **LONG SETUP** or **SHORT SETUP**, V6 shows a large visual alert and, after browser sound is armed, attempts an audible beep/notification.
+5. Review the entry/stop/target and risk panel.
+6. **You place the order manually in TopstepX.**
 """)
 
 st.warning("Market-data limitation: the built-in Yahoo Finance feed is labeled delayed for CME futures. Do not treat these alerts as real-time execution signals. For live trading, use an authorized real-time market-data source; V6 is structured so the feed can be swapped later without adding order automation.")
