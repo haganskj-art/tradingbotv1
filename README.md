@@ -1,93 +1,27 @@
-# GravAI BTC Market Intelligence — V1
+# GRAVIAI V2 — BTC Paper Trader
 
-A detection-only real-time BTCUSDT dashboard inspired by the supplied dark trading-terminal screenshot.
+Upload the included files to the GitHub repo. Keep `app.py` at the repository root and `src/market_engine.py` under `src/`.
 
-## What V1 does
+This version uses Binance public market data and adds a **paper-only** trading engine. It can simulate entries on the existing GRAVIAI BUY/SELL DISLOCATION signals and automatically simulate exits with take profit, stop loss, trailing stop, cooldown, and a maximum daily loss.
 
-- Connects to Binance Spot public WebSocket market streams.
-- Reads BTCUSDT trades and top-20 order-book depth.
-- Updates the feed at sub-second speed (depth stream is 100ms).
-- Calculates:
-  - microprice
-  - adaptive EMA fair value
-  - price deviation
-  - rolling z-score
-  - buy/sell aggressive-flow imbalance
-  - short-term volume burst
-  - composite anomaly score
-- Shows a dark neon dashboard with:
-  - live price chart
-  - actual vs fair value
-  - anomaly score
-  - order book
-  - buy/sell aggression
-  - live detection log
-  - feed health
+It does not connect to an exchange trading account and does not place real orders.
 
-## Important
+Streamlit Cloud main file: `app.py`
 
-This is **not an execution bot**. V1 does not use API keys and cannot place trades.
 
-The anomaly score is a heuristic monitoring score, not a probability of profit. A large deviation can be real market movement, feed noise, or a temporary dislocation.
+## V3 — Binance Spot Testnet execution adapter
 
-## Install on Windows
+V3 adds `src/binance_testnet.py`, an authenticated, **testnet-only** Binance Spot execution adapter.
 
-1. Install Python 3.11+.
-2. Open PowerShell in this folder.
-3. Create a virtual environment:
+It is intentionally separate from the V2 paper trader. The dashboard should remain in PAPER mode by default. Before enabling automatic Testnet execution, add an explicit TESTNET mode with one-entry-per-signal protection, exchange order reconciliation, symbol quantity-filter validation, and hard risk limits.
 
-```powershell
-py -m venv .venv
-```
+### Credentials
 
-4. Activate it:
+Put these in Streamlit Cloud Secrets, never in GitHub:
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+    BINANCE_TESTNET_API_KEY = "..."
+    BINANCE_TESTNET_API_SECRET = "..."
 
-If PowerShell blocks activation, use:
+The adapter uses `https://testnet.binance.vision` only.
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-5. Install packages:
-
-```powershell
-python -m pip install -r requirements.txt
-```
-
-6. Start the dashboard:
-
-```powershell
-python -m streamlit run app.py
-```
-
-7. Open the local address Streamlit prints, usually `http://localhost:8501`.
-
-## If Windows Firewall asks
-
-Allow Python to communicate on private networks if you trust your local network. The app only consumes public Binance market data.
-
-## Project structure
-
-```text
-btc_anomaly_dashboard_v1/
-├── app.py
-├── requirements.txt
-├── README.md
-└── src/
-    └── market_engine.py
-```
-
-## Next upgrades
-
-- Multi-exchange BTC comparison.
-- Better order-book imbalance features.
-- Persistent tick database.
-- Replay/backtesting mode.
-- Alert sound / Discord / Telegram.
-- NQ adapter using a licensed real-time futures feed.
-- Separate model training/evaluation pipeline.
-- Paper-trading simulator.
+This V3 package does not enable live-money trading and does not include the production Binance endpoint.
