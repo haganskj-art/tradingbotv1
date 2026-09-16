@@ -3,8 +3,10 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
+from streamlit_autorefresh import st_autorefresh
 
 from src.market_engine import MarketEngine
+from paper_trader import PaperTrader
 
 st.set_page_config(
     page_title="GravAI • BTC Market Intelligence",
@@ -91,7 +93,34 @@ def get_engine():
 engine = get_engine()
 engine.start()
 
+@st.cache_resource
+def get_paper_trader():
+    return PaperTrader()
+
+trader = get_paper_trader()
+st_autorefresh(interval=500, key="graviai_paper_refresh")
+
+with st.sidebar:
+    st.header("⚡ GRAVIAI V2")
+    st.caption("Paper trading only — no exchange orders.")
+    armed = st.toggle("ARM PAPER BOT", value=trader.enabled)
+    if armed != trader.enabled:
+        trader.set_enabled(armed)
+    st.subheader("Risk controls")
+    trader.position_usd = st.number_input("Paper position ($)", 100.0, 100000.0, 5000.0, 100.0)
+    trader.take_profit_usd = st.number_input("Take profit ($)", 1.0, 10000.0, 25.0, 1.0)
+    trader.stop_loss_usd = st.number_input("Stop loss ($)", 1.0, 10000.0, 10.0, 1.0)
+    trader.trailing_start_usd = st.number_input("Trailing starts at ($)", 1.0, 10000.0, 15.0, 1.0)
+    trader.trailing_distance_usd = st.number_input("Trailing distance ($)", 1.0, 10000.0, 8.0, 1.0)
+    trader.max_daily_loss_usd = st.number_input("Max daily loss ($)", 1.0, 10000.0, 50.0, 5.0)
+    trader.cooldown_seconds = st.number_input("Cooldown (seconds)", 0, 3600, 15, 5)
+    trader.min_signal_score = st.slider("Minimum signal score", 50, 100, 70)
+    if st.button("🚨 EMERGENCY FLATTEN", use_container_width=True):
+        trader.emergency_flatten(engine.snapshot()["price"])
+
 state = engine.snapshot()
+trader.update(state)
+trade_state = trader.snapshot(state["price"])
 price = state["price"]
 fair = state["fair_value"]
 score = state["anomaly_score"]
@@ -215,6 +244,23 @@ with b2:
     st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Paper trading panel
+st.markdown("### PAPER TRADER")
+t1, t2, t3, t4, t5 = st.columns(5)
+pos = trade_state["position"]
+t1.metric("BOT", "ARMED" if trade_state["enabled"] else "OFF")
+t2.metric("POSITION", pos["side"] if pos else "FLAT")
+t3.metric("UNREALIZED", f"${trade_state["unrealized_pnl"]:+,.2f}")
+t4.metric("REALIZED", f"${trade_state["realized_pnl"]:+,.2f}")
+t5.metric("DAILY P/L", f"${trade_state["daily_pnl"]:+,.2f}")
+if pos:
+    st.caption(f"Entry ${pos["entry"]:,.2f} • Best P/L ${pos["best_pnl"]:+,.2f} • {trade_state["last_reason"]}")
+else:
+    st.caption(f"{trade_state["last_reason"]} • TP ${trader.take_profit_usd:,.2f} • SL ${trader.stop_loss_usd:,.2f}")
+
+if trade_state["trades"]:
+    st.dataframe(pd.DataFrame(trade_state["trades"]), use_container_width=True, hide_index=True)
+
 # Row 3
 l1, l2 = st.columns([1.4, 1.0])
 with l1:
@@ -236,8 +282,7 @@ with l2:
     st.markdown(f'<span class="small">WEBSOCKET</span><br><span class="mono green">{status}</span>', unsafe_allow_html=True)
     st.markdown(f'<span class="small">LAST EVENT</span><br><span class="mono">{state["last_event_ms"]:.0f} ms</span>', unsafe_allow_html=True)
     st.markdown(f'<span class="small">TRADES BUFFERED</span><br><span class="mono">{state["trade_count"]:,}</span>', unsafe_allow_html=True)
-    st.markdown('<hr><span class="muted">V1 is detection-only. No exchange API keys and no order execution are used.</span>', unsafe_allow_html=True)
+    st.markdown('<hr><span class="muted">V2 paper trading only. No exchange API keys and no real orders are used.</span>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Refresh without an extra package. Streamlit reruns when the page is refreshed.
-st.caption("Refresh the browser to update the dashboard. The background collector continues while the Streamlit process is running.")
+st.caption("V2 automatically evaluates the paper strategy twice per second. It does not place real orders.")
