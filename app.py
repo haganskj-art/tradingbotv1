@@ -12,14 +12,13 @@ from streamlit_autorefresh import st_autorefresh
 
 from src.market_data import LiveMarketData
 from src.topstep_assistant import TopstepAssistant
-from src.simulated_trader import SimulatedTrader
 
-st.set_page_config(page_title="GravAI V8 — Topstep Assistant", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="GravAI V6 — Topstep Assistant", page_icon="⚡", layout="wide")
 st.markdown("""<style>
 body{background:#08090d}.block-container{padding-top:1rem}.card,.signal{background:#101118;border:1px solid #242532;border-radius:12px;padding:16px;margin-bottom:14px}.small,.muted{color:#858897}.metric{font-size:2rem;font-weight:700}.green{color:#55d98a}.red{color:#ff6878}.yellow{color:#ffd45a}.mono{font-family:monospace}.alertbox{border:2px solid #ffcf33;background:#261f08;border-radius:14px;padding:18px;margin-bottom:16px}.status{padding:7px 10px;border-radius:10px;display:inline-block;background:#1b1d26}.danger{background:#35131a}.ok{background:#11251a}
 </style>""", unsafe_allow_html=True)
 
-st.title("⚡ GRAVAI V8 — TOPSTEP ASSISTANT")
+st.title("⚡ GRAVAI V6 — TOPSTEP ASSISTANT")
 st.caption("Automatic NQ/MNQ monitoring + alerts | You remain in control of the final TopstepX order click")
 
 market = st.sidebar.selectbox("MARKET", ["NQ", "MNQ"])
@@ -32,12 +31,6 @@ if market not in st.session_state.assistants:
     st.session_state.assistants[market] = TopstepAssistant(market, multiplier)
 assistant = st.session_state.assistants[market]
 
-if "sims" not in st.session_state:
-    st.session_state.sims = {}
-if market not in st.session_state.sims:
-    st.session_state.sims[market] = SimulatedTrader(market, multiplier)
-sim = st.session_state.sims[market]
-
 if "feed" not in st.session_state:
     st.session_state.feed = LiveMarketData(st.secrets)
     st.session_state.feed.start()
@@ -47,8 +40,6 @@ if "alert_count" not in st.session_state:
     st.session_state.alert_count = 0
 if "alert_log" not in st.session_state:
     st.session_state.alert_log = []
-if "last_sim_signal_key" not in st.session_state:
-    st.session_state.last_sim_signal_key = {"NQ": "", "MNQ": ""}
 if "last_fetch_error" not in st.session_state:
     st.session_state.last_fetch_error = ""
 
@@ -67,25 +58,6 @@ st.sidebar.subheader("AUTO MONITOR")
 auto = st.sidebar.toggle("Enable automatic monitoring", value=False)
 interval = st.sidebar.slider("Refresh interval (seconds)", min_value=5, max_value=60, value=10, step=5)
 sound_enabled = st.sidebar.checkbox("Arm browser sound", value=False)
-
-st.sidebar.subheader("SIMULATION MODE")
-auto_sim = st.sidebar.toggle("Auto-simulate qualifying signals", value=False)
-sim_balance = st.sidebar.number_input("Simulation starting balance ($)", min_value=1000.0, value=50000.0, step=1000.0)
-sim_contracts = st.sidebar.number_input("Auto-sim contracts", min_value=1, value=1, step=1)
-sim_stop_atr = st.sidebar.number_input("Auto stop = ATR ×", min_value=0.25, value=1.0, step=0.25)
-sim_rr = st.sidebar.number_input("Auto target R:R", min_value=0.5, value=2.0, step=0.25)
-sim_daily_limit = st.sidebar.number_input("Simulation daily loss limit ($)", min_value=25.0, value=300.0, step=25.0)
-sim_max_trades = st.sidebar.number_input("Simulation max trades/day", min_value=1, value=5, step=1)
-sim.slippage_points = st.sidebar.number_input("Simulated slippage (points)", min_value=0.0, value=0.0, step=0.25)
-sim.starting_balance = float(sim_balance)
-sim.max_trades = int(sim_max_trades)
-st.sidebar.caption("Simulation only: no broker/API orders are sent.")
-st.sidebar.caption("Stops/targets are exchange-independent planning levels for the simulator.")
-if st.sidebar.button("Reset this market simulation", use_container_width=True):
-    st.session_state.sims[market] = SimulatedTrader(market, multiplier, starting_balance=float(sim_balance))
-    st.session_state.last_sim_signal_key[market] = ""
-    st.rerun()
-
 st.sidebar.caption("CME Live uses an authorized CME WebSocket subscription. Yahoo is retained only as a delayed fallback.")
 
 if auto:
@@ -123,53 +95,6 @@ else:
 
 state = st.session_state.get("last_state", assistant.snapshot())
 quote = st.session_state.get("last_quote")
-
-# Update the simulated position on every refresh using the latest bar/quote.
-if quote is not None and state.get("price", 0) > 0:
-    sim_high = sim_low = float(state.get("price", 0))
-    candles = quote.candles if quote is not None else None
-    if candles is not None and not candles.empty:
-        last_bar = candles.iloc[-1]
-        sim_high = float(last_bar.get("high", state.get("price", 0)))
-        sim_low = float(last_bar.get("low", state.get("price", 0)))
-    closed = sim.update(float(state.get("price", 0)), sim_high, sim_low,
-                        max_daily_loss=float(sim_daily_limit))
-    if closed is not None:
-        st.session_state.alert_log.insert(0, {
-            "time": closed.closed_at, "market": market, "signal": closed.exit_reason,
-            "price": closed.exit, "pnl": closed.pnl,
-        })
-        st.session_state.alert_log = st.session_state.alert_log[:20]
-
-# Auto-enter once per unique confirmed signal. This is a local simulation only.
-sig = state.get("signal", "WAITING")
-diag = state.get("diagnostics", {}) or {}
-atr = float(diag.get("atr", 0) or 0)
-price_now = float(state.get("price", 0) or 0)
-bar_key = str(candles.iloc[-1]["timestamp"]) if quote is not None and candles is not None and not candles.empty else str(state.get("updated", ""))
-if auto_sim and sig in ("LONG SETUP", "SHORT SETUP") and price_now > 0 and atr > 0:
-    stop_points_auto = max(0.25, atr * float(sim_stop_atr))
-    target_points_auto = stop_points_auto * float(sim_rr)
-    auto_side = "LONG" if sig.startswith("LONG") else "SHORT"
-    entry = price_now
-    stop = assistant.stop_price(entry, stop_points_auto, auto_side)
-    target = assistant.target_price(entry, target_points_auto, auto_side)
-    signal_key = f"{market}|{sig}|{bar_key}"
-    # Only auto-enter once when a fresh setup bar appears; do not re-enter on every refresh.
-    # A new setup direction/bar can create a new key after a position is closed.
-    if st.session_state.last_sim_signal_key.get(market) != signal_key:
-        opened, reason = sim.open(auto_side, int(sim_contracts), entry, stop, target,
-                                  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                  signal_key, float(state.get("score", 0)),
-                                  float(sim_daily_limit))
-        st.session_state.last_sim_signal_key[market] = signal_key
-        if opened:
-            st.session_state.alert_log.insert(0, {
-                "time": datetime.now().strftime("%H:%M:%S"), "market": market,
-                "signal": f"SIM ENTRY {auto_side}", "price": entry,
-                "score": float(state.get("score", 0)), "stop": stop, "target": target,
-            })
-            st.session_state.alert_log = st.session_state.alert_log[:20]
 
 # Alert only on a new setup direction, not every page refresh.
 sig = state.get("signal", "WAITING")
@@ -295,31 +220,6 @@ with st.expander("Signal diagnostics — why GravAI is waiting or alerting", exp
     else:
         st.info("Waiting for enough market bars to calculate the precision model.")
 
-st.subheader("Simulated Execution")
-sp = sim.snapshot()
-if sp["position"]:
-    pos = sp["position"]
-    st.markdown(f'<div class="alertbox"><div class="small">SIMULATED POSITION</div><div class="metric {"green" if pos["side"]=="LONG" else "red"}">{pos["side"]} {pos["contracts"]} {market}</div><div>Entry {pos["entry"]:,.2f} • Stop {pos["stop"]:,.2f} • Target {pos["target"]:,.2f}</div><div>Risk ${pos["risk_dollars"]:,.2f} • Unrealized P&L ${sp["unrealized_pnl"]:,.2f}</div></div>', unsafe_allow_html=True)
-    if st.button("EMERGENCY FLATTEN SIMULATION", type="secondary", use_container_width=True):
-        sim.flatten_at_price(price_now)
-        st.rerun()
-else:
-    st.info("No simulated position. Enable Auto-simulate to let qualifying GravAI signals open a local simulated bracket trade.")
-
-sa,sb,sc,sd = st.columns(4)
-sa.metric("SIM EQUITY", f'${sp["equity"]:,.2f}')
-sb.metric("REALIZED P&L", f'${sp["realized_pnl"]:,.2f}')
-sc.metric("DAILY P&L", f'${sp["daily_pnl"]:,.2f}')
-sd.metric("TRADES TODAY", f'{sp["trades_today"]} / {sim.max_trades}')
-if sp["locked"]:
-    st.error("SIMULATION LOCKED — daily loss or trade limit reached.")
-
-with st.expander("Simulated trade history"):
-    if sp["trades"]:
-        st.dataframe(pd.DataFrame(sp["trades"]), use_container_width=True, hide_index=True)
-    else:
-        st.caption("No simulated trades yet.")
-
 st.subheader("Trade Plan")
 col1, col2 = st.columns([1, 2])
 with col1:
@@ -353,21 +253,20 @@ with st.expander("Alert history"):
     else:
         st.caption("No new setup alerts yet.")
 
-st.subheader("How V8 works")
+st.subheader("How V6 works")
 st.markdown("""
 1. Turn on **Enable automatic monitoring**.
 2. GravAI polls the configured market feed on the selected interval.
 3. The precision model checks trend alignment, 5-minute and 15-minute confirmation, VWAP, RSI/momentum, pullback/reclaim behavior, candle quality, volume, and overextension.
 4. A setup must also confirm on the prior completed bar and pass a cooldown.
-5. When the signal changes into **LONG SETUP** or **SHORT SETUP**, V8 shows a visual/audio alert.
-6. Turn on **Auto-simulate qualifying signals** to open a local simulated bracket trade automatically.
-7. Every simulated trade gets a stop-loss and take-profit and is monitored on subsequent market updates.
-8. Review simulated results before considering any live execution path.
+5. When the signal changes into **LONG SETUP** or **SHORT SETUP**, V6 shows a large visual alert and, after browser sound is armed, attempts an audible beep/notification.
+6. Review the entry/stop/target and risk panel.
+7. **You place the order manually in TopstepX.**
 """)
 
-st.warning("Simulation safety: V8 never sends broker or TopstepX orders. Auto-simulation is local only. If CME Live is not configured, Yahoo data is delayed and should not be treated as execution-grade data.")
+st.warning("Market-data limitation: the built-in Yahoo Finance feed is labeled delayed for CME futures. Do not treat these alerts as real-time execution signals. For live trading, use an authorized real-time market-data source; V6 is structured so the feed can be swapped later without adding order automation.")
 
 with st.expander("Safety"):
     st.write("V6 never logs into, scrapes, clicks, submits, modifies, or cancels TopstepX orders. It is an analysis/alerting tool. NQ uses $20 per index point per contract; MNQ uses $2 per point per contract. Verify your current Topstep rules, contract, and risk limits before trading.")
 
-st.caption(f"GravAI V8 • {market} • Automatic monitoring: {'ON' if auto else 'OFF'} • Auto-simulation: {'ON' if auto_sim else 'OFF'} • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(f"GravAI V6 • {market} • Automatic monitoring: {'ON' if auto else 'OFF'} • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

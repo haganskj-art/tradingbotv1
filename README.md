@@ -1,69 +1,61 @@
-# GRAVAI V8 — Topstep Assistant (Auto Signals + Simulated Execution)
+# GRAVAI V7 — Topstep Assistant (Real-Time Market Data)
 
-GravAI V8 builds on V7 with **local simulated execution**. It automatically opens a simulated bracket trade when a qualifying LONG/SHORT signal appears, then manages the simulated stop-loss and take-profit without sending any broker or TopstepX orders.
+GravAI V7 keeps the final TopstepX order click under your control while adding an **authorized real-time CME futures data connector** for NQ/MNQ. It does not place Topstep orders and does not scrape or click TopstepX.
 
-## V8 features
+## What changed from V6
 
-- NQ and MNQ
-- Authorized CME WebSocket feed option from V7
-- Yahoo delayed fallback clearly labeled
-- Precision, multi-factor LONG/SHORT confluence engine
-- Automatic monitoring
-- Visual and optional audible alerts
-- Automatic **simulation-only** entries
-- Automatic simulated stop-loss and take-profit
-- ATR-based stop sizing and configurable R:R target
-- Maximum simulated trades/day
-- Simulated daily-loss lock
-- Simulated slippage option
-- Unrealized and realized P&L
-- Simulated position dashboard and trade history
-- Emergency simulated flatten
-- Reset simulation button
-- No ProjectX API
-- No TopstepX credentials
-- No broker order submission
-- No browser automation or screen scraping
+- CME Group real-time WebSocket feed option for NQ/MNQ
+- Yahoo delayed feed retained only as an explicit fallback
+- Live connection/status indicator
+- Live quote age and message counter
+- Existing precision LONG/SHORT confluence engine retained
+- Existing visual/audio alerts retained
+- No ProjectX API required for order execution because V7 never sends orders
 
-## Simulation pipeline
+## Important: real-time CME access is separate from TopstepX execution
+
+CME offers a cloud-hosted real-time Futures & Options WebSocket API that can provide top-of-book and trade data. Access requires the appropriate CME data subscription/licensing. CME's portal provides the environment-specific WebSocket URL, authentication, and sample subscription message. V7 intentionally reads those values from Streamlit Secrets instead of guessing at CME-specific protocol details.
+
+## Streamlit Secrets
+
+Use the exact values supplied by CME for:
+
+- `CME_WS_URL`
+- `CME_WS_HEADERS_JSON` (JSON object; only when required)
+- `CME_SUBSCRIBE_JSON` (exact JSON subscription request)
+- `CME_SYMBOL`
+
+Never commit real credentials, tokens, or private subscription values to GitHub.
+
+## Data pipeline
 
 ```text
-CME real-time feed (when configured)
-            ↓
-     Precision signal engine
-            ↓
-        LONG / SHORT
-            ↓
-     Simulation risk checks
-            ↓
-    Local simulated market entry
-            ↓
-       ┌──────────────┐
-       │ Stop Loss    │
-       │ Take Profit  │
-       └──────────────┘
-            ↓
-      Simulated P&L log
+CME WebSocket (real-time)
+        ↓
+NQ / MNQ quote + trade messages
+        ↓
+Local 1-minute OHLCV buffer
+        ↓
+GravAI precision signal engine
+        ↓
+LONG / SHORT / WAIT
+        ↓
+Visual + optional sound alert
+        ↓
+YOU place the order in TopstepX
 ```
 
-### Automatic bracket settings
+The V7 adapter also keeps the last quote, connection status, and a rolling bar buffer in memory. If CME Live is not configured, the dashboard clearly falls back to Yahoo delayed data.
 
-When Auto-simulate is enabled:
+## Topstep workflow
 
-- Entry = current modeled market price
-- Stop distance = `ATR × Auto stop = ATR ×`
-- Target distance = `stop distance × Auto target R:R`
-- NQ dollar value = $20 per index point per contract
-- MNQ dollar value = $2 per index point per contract
+1. Open TopstepX on the same computer.
+2. Run GravAI V7.
+3. Select `CME Live` once your CME subscription is configured.
+4. Enable automatic monitoring.
+5. Confirm the dashboard says `REAL-TIME` and the quote age is current.
+6. Wait for a LONG/SHORT alert.
+7. Review entry, stop, target, R:R and risk.
+8. Place the trade manually in TopstepX.
 
-When a single OHLC bar shows both the stop and target being touched, the simulator uses **stop-first** by default because OHLC data alone cannot prove which level traded first. This is a conservative simulation assumption.
-
-## Safety
-
-V8 is **simulation-only**. It does not log into TopstepX, click buttons, submit orders, modify orders, cancel orders, or access a Topstep account. Do not treat the signal score as a probability or a profit guarantee.
-
-For live-use research, validate the strategy with recorded market data / paper results first and verify current Topstep rules and risk limits before trading.
-
-## CME connection
-
-V7's CME WebSocket connector is retained. Configure the exact environment-specific URL, authentication headers, and subscription message supplied by CME through Streamlit Secrets. Never put private credentials or tokens in GitHub.
+Do not treat an alert as a guarantee of profit or execution quality. Validate the signal engine in simulation first.
