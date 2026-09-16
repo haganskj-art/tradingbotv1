@@ -6,7 +6,7 @@ import math
 
 
 class TopstepAssistant:
-    """Manual-input Topstep trading assistant. It never sends orders."""
+    """Signal and risk-planning engine. It never sends Topstep orders."""
 
     def __init__(self, market="NQ", multiplier=20.0):
         self.market = market
@@ -36,7 +36,6 @@ class TopstepAssistant:
             std = 0.0
         z = (price - mean) / std if std > 1e-9 else 0.0
         deviation = price - fair
-        # Manual-input assistant uses price/fair-value dislocation only.
         if z <= -1.5 and price <= fair:
             signal = "LONG SETUP"
         elif z >= 1.5 and price >= fair:
@@ -49,6 +48,12 @@ class TopstepAssistant:
         return self.snapshot(price, bid, ask, fair, z, deviation)
 
     def snapshot(self, price=0.0, bid=0.0, ask=0.0, fair=0.0, z=0.0, deviation=0.0):
+        if abs(z) >= 2.5:
+            strength = "HIGH"
+        elif abs(z) >= 1.5:
+            strength = "SETUP"
+        else:
+            strength = "NONE"
         return {
             "market": self.market,
             "price": float(price),
@@ -58,6 +63,7 @@ class TopstepAssistant:
             "zscore": float(z),
             "deviation": float(deviation),
             "signal": self.last_signal,
+            "strength": strength,
             "history": list(self.history),
             "updated": self.last_update,
         }
