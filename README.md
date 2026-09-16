@@ -1,27 +1,46 @@
-# GRAVIAI V2 — BTC Paper Trader
+# GRAVAI V5 — Topstep Assistant
 
-Upload the included files to the GitHub repo. Keep `app.py` at the repository root and `src/market_engine.py` under `src/`.
+GravAI V5 is the no-API, no-auto-execution version for trading NQ/MNQ alongside a TopstepX account.
 
-This version uses Binance public market data and adds a **paper-only** trading engine. It can simulate entries on the existing GRAVIAI BUY/SELL DISLOCATION signals and automatically simulate exits with take profit, stop loss, trailing stop, cooldown, and a maximum daily loss.
+## What it does
 
-It does not connect to an exchange trading account and does not place real orders.
+- NQ — E-mini Nasdaq-100
+- MNQ — Micro E-mini Nasdaq-100
+- Manual current price / bid / ask input
+- Fair-value and price-dislocation analysis
+- LONG SETUP / SHORT SETUP / WAIT signal display
+- Entry, stop, target and R:R planner
+- Dollar risk calculation based on contract size
+- Personal daily-loss planning check
+- Trade-plan dashboard and journal-ready layout
 
-Streamlit Cloud main file: `app.py`
+## What it does NOT do
 
+- It does not connect to TopstepX.
+- It does not require ProjectX API access.
+- It does not submit, modify, or cancel Topstep orders.
+- It does not scrape or click TopstepX.
+- It does not guarantee profitable trades.
 
-## V3 — Binance Spot Testnet execution adapter
+You place the order manually in TopstepX after reviewing GravAI.
 
-V3 adds `src/binance_testnet.py`, an authenticated, **testnet-only** Binance Spot execution adapter.
+## Contract values
 
-It is intentionally separate from the V2 paper trader. The dashboard should remain in PAPER mode by default. Before enabling automatic Testnet execution, add an explicit TESTNET mode with one-entry-per-signal protection, exchange order reconciliation, symbol quantity-filter validation, and hard risk limits.
+- NQ: $20 per index point per contract.
+- MNQ: $2 per index point per contract.
 
-### Credentials
+Always verify the active contract and current Topstep rules before trading.
 
-Put these in Streamlit Cloud Secrets, never in GitHub:
+## Run
 
-    BINANCE_TESTNET_API_KEY = "..."
-    BINANCE_TESTNET_API_SECRET = "..."
+The app is designed for Streamlit. No Topstep or broker credentials are required for V5.
 
-The adapter uses `https://testnet.binance.vision` only.
+```text
+streamlit run app.py
+```
 
-This V3 package does not enable live-money trading and does not include the production Binance endpoint.
+If deploying to Streamlit Cloud, no secrets are required for the Topstep Assistant mode.
+
+## Important limitation
+
+Without an official market-data API connection, V5 uses manual market input. It is intended to sit beside TopstepX while you trade. Do not assume the values are live unless you entered them from your live platform.

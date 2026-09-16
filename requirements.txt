@@ -1,2 +1,7 @@
+streamlit
 streamlit-autorefresh
 requests
+pandas
+plotly
+numpy
+websocket-client
